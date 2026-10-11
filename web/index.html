@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MNIST 手写数字识别 · 交互演示</title>
+  <!-- 依赖已本地化：断网环境亦可直接演示（双击 index.html 即可打开） -->
+  <script src="assets/vendor/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/vendor/fontawesome/all.min.css">
+  <style>
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+
+    .font-mono-code {
+      font-family: Consolas, 'Cascadia Mono', 'Courier New', monospace;
+    }
+
+    /* 浅色精致卡片 */
+    .card-clean {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+      border-radius: 0.875rem;
+    }
+
+    /* 选项卡激活样式 */
+    .tab-active {
+      background-color: #ffffff;
+      color: #4f46e5;
+      font-weight: 700;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08);
+      border: 1px solid #e2e8f0;
+    }
+
+    /* 拖拽动画与视觉过渡 */
+    .layer-card {
+      transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: grab;
+      user-select: none;
+    }
+    .layer-card:active {
+      cursor: grabbing;
+    }
+    .layer-card.dragging {
+      opacity: 0.45;
+      transform: scale(0.97);
+      border-color: #6366f1 !important;
+      background-color: #eef2ff !important;
+    }
+    .layer-card.drag-over {
+      border-top: 3px solid #4f46e5 !important;
+    }
+    @keyframes highlightPulse {
+      0% { transform: scale(0.98); background-color: #e0e7ff; }
+      100% { transform: scale(1); background-color: #ffffff; }
+    }
+    .just-swapped {
+      animation: highlightPulse 0.4s ease-out;
+    }
+
+    #digit-canvas { touch-action: none; }
+
+    /* 滚动条美化 */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+
+  <!-- 顶部导航栏 -->
+  <header class="border-b border-slate-200 bg-white/90 sticky top-0 z-50 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3.5">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
+          <i class="fa-solid fa-brain text-lg"></i>
+        </div>
+        <div>
+          <h1 class="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+            MNIST 手写数字识别 · 交互演示
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200">Interactive Demo</span>
+          </h1>
+          <p class="text-xs text-slate-500">网络结构搭建与代码生成 · 手写数字浏览器端实时推理</p>
+        </div>
+      </div>
+
+      <!-- 状态指示 -->
+      <div class="flex items-center space-x-3 text-xs">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span>纯前端 · 无需后端</span>
+        </div>
+        <div class="px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium">
+          <i class="fa-solid fa-microchip mr-1"></i> 自训练 CNN · PyTorch 导出权重
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 功能切换 -->
+  <div class="bg-slate-100/80 border-b border-slate-200 py-2.5">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-center sm:justify-start">
+      <nav class="inline-flex p-1 rounded-xl bg-slate-200/70 text-xs font-medium space-x-1 overflow-x-auto" id="nav-tabs">
+        <button onclick="switchTab('builder')" id="tab-btn-builder" class="tab-active px-4 py-2 rounded-lg flex items-center gap-2 transition whitespace-nowrap">
+          <i class="fa-solid fa-cubes-stacked text-indigo-600"></i> 模型积木与动态代码
+        </button>
+        <button onclick="switchTab('canvas')" id="tab-btn-canvas" class="px-4 py-2 rounded-lg text-slate-600 hover:text-slate-900 flex items-center gap-2 transition whitespace-nowrap">
+          <i class="fa-solid fa-pen-nib text-emerald-600"></i> 手写数字实时识别
+        </button>
+      </nav>
+    </div>
+  </div>
+
+  <!-- 主内容区域 -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- ==================== TAB 1: 模型积木与动态代码 ==================== -->
+    <section id="pane-builder" class="space-y-6">
+      <!-- 顶部控制条 -->
+      <div class="card-clean p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+            神经网络流水线设计器
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            每一层的输入由上一层输出<strong>自动推导</strong>（首层固定接收 1×28×28 灰度图，不可修改）。
+            卷积、池化（Max/Avg）、BatchNorm、全连接均为<strong>独立积木</strong>；
+            非法结构（如卷积/池化放在展平之后、特征图过小仍池化）会被<strong>实时拦截</strong>。右侧同步生成对应的 PyTorch 代码与逐层形状注释。
+          </p>
+        </div>
+        <!-- 预设模板 -->
+        <div class="flex items-center gap-2 flex-wrap text-xs">
+          <span class="text-slate-400 font-medium">经典预设:</span>
+          <button onclick="loadTemplate('cnn')" class="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200 hover:bg-indigo-100 transition">
+            CNN 卷积特征提取网络
+          </button>
+          <button onclick="loadTemplate('mlp')" class="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 font-semibold border border-amber-200 hover:bg-amber-100 transition">
+            MLP 多层全连接网络
+          </button>
+          <button onclick="loadTemplate('shallow')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition">
+            单层感知机
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <!-- 左侧：积木卡片与配置 (5列) -->
+        <div class="lg:col-span-5 space-y-4">
+          <!-- 训练超参数选择 -->
+          <div class="card-clean p-4">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-500">训练超参数配置</span>
+              <i class="fa-solid fa-sliders text-indigo-500"></i>
+            </div>
+            <div class="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <label class="text-slate-600 block mb-1 font-medium">优化器</label>
+                <select id="cfg-optimizer" onchange="renderCode()" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium">
+                  <option value="Adam">Adam (自适应动量)</option>
+                  <option value="SGD">SGD + Momentum (经典)</option>
+                  <option value="RMSprop">RMSprop</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-slate-600 block mb-1 font-medium">学习率</label>
+                <select id="cfg-lr" onchange="renderCode()" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium">
+                  <option value="0.001">0.001 (推荐默认)</option>
+                  <option value="0.01">0.01 (SGD配合)</option>
+                  <option value="0.1">0.1 (大步长)</option>
+                  <option value="0.0001">0.0001 (微调)</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-slate-600 block mb-1 font-medium">批次大小</label>
+                <select id="cfg-batch" onchange="renderCode()" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium">
+                  <option value="64">64</option>
+                  <option value="32">32</option>
+                  <option value="128">128</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-slate-600 block mb-1 font-medium">数据增强 (训练集)</label>
+                <select id="cfg-augment" onchange="renderCode()" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium">
+                  <option value="none">无</option>
+                  <option value="affine">随机平移 + 旋转</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-slate-600 block mb-1 font-medium">损失函数</label>
+                <input type="text" disabled value="CrossEntropyLoss()" class="w-full bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-500 cursor-not-allowed">
+              </div>
+            </div>
+          </div>
+
+          <!-- 可拖动层列表 -->
+          <div class="card-clean p-4">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-500">网络流水线层清单</span>
+                <span class="text-[11px] text-slate-400 block">按住卡片拖拽调整顺序（非法顺序会被拒绝）</span>
+              </div>
+              <div class="flex gap-1.5">
+                <button onclick="addLayer('linear')" class="px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 text-xs font-semibold transition">
+                  + 全连接层
+                </button>
+                <button onclick="addLayer('conv')" class="px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition">
+                  + 卷积层
+                </button>
+                <button onclick="addLayer('pool')" class="px-2.5 py-1 rounded-md bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-100 text-xs font-semibold transition">
+                  + 池化层
+                </button>
+                <button onclick="addLayer('bn')" class="px-2.5 py-1 rounded-md bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 text-xs font-semibold transition">
+                  + BatchNorm
+                </button>
+              </div>
+            </div>
+
+            <!-- 结构校验状态条 -->
+            <div id="builder-status" class="mb-3 text-xs px-3 py-2 rounded-lg border flex items-start gap-2"></div>
+
+            <!-- 动态卡片列表容器 -->
+            <div id="layers-container" class="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
+              <!-- 动态注入层卡片 -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧：代码窗口 (7列) -->
+        <div class="lg:col-span-7 space-y-4">
+          <!-- 结构摘要 -->
+          <div class="card-clean px-4 py-3">
+            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">结构摘要（自动推导的张量流）</div>
+            <div id="shape-flow" class="font-mono-code text-[11px] leading-relaxed text-slate-700 break-all"></div>
+          </div>
+
+          <!-- 生成的代码窗口 -->
+          <div class="card-clean overflow-hidden flex flex-col h-[520px]">
+            <div class="bg-slate-900 px-4 py-2.5 flex items-center justify-between text-white border-b border-slate-800">
+              <div class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                <span class="w-3 h-3 rounded-full bg-amber-400"></span>
+                <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+                <span class="text-xs font-mono text-slate-400 ml-2">generated_network.py</span>
+              </div>
+              <button onclick="copyGeneratedCode()" id="copy-btn" class="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1.5">
+                <i class="fa-regular fa-copy"></i> 复制代码
+              </button>
+            </div>
+            <div class="p-4 flex-1 overflow-auto bg-slate-950">
+              <pre id="code-output" class="font-mono-code text-xs text-slate-200 leading-relaxed"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 2: 手写数字实时识别 ==================== -->
+    <section id="pane-canvas" class="hidden space-y-6">
+      <div class="card-clean p-4">
+        <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+          现场手写数字识别板
+        </h2>
+        <p class="text-xs text-slate-500 mt-0.5">
+          在黑色画板上手写数字 0~9。页面加载的是<strong>你训练的 CNN 权重</strong>（PyTorch 训练 100 epoch 后从 model.pth 导出），
+          浏览器端用 JS 复现完整的卷积→池化→全连接前向传播。输入会自动缩放到 28×28 并按质心居中，与 MNIST 训练分布对齐。
+          也可以把训练保存的 <strong>.pth 直接拖进下方上传区</strong>，浏览器内解析后即时更换模型。
+        </p>
+        <div id="model-status" class="text-[11px] text-slate-400 mt-1"></div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+        <!-- 左侧画板 (5列) -->
+        <div class="md:col-span-5 card-clean p-5 flex flex-col items-center">
+          <div class="text-xs text-slate-500 mb-2 font-mono flex items-center justify-between w-full">
+            <span>输入画板 (280 × 280)</span>
+            <span class="text-emerald-600 font-semibold">28×28 质心居中</span>
+          </div>
+          <!-- 黑色画板 -->
+          <div class="rounded-2xl overflow-hidden border-2 border-slate-800 shadow-md">
+            <canvas id="digit-canvas" width="280" height="280" class="bg-black cursor-crosshair block"></canvas>
+          </div>
+
+          <!-- 工具按钮 -->
+          <div class="flex items-center gap-2 mt-4 w-full">
+            <button onclick="clearCanvas()" class="flex-1 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs text-slate-700 font-semibold transition border border-slate-200 flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-eraser"></i> 清空重写
+            </button>
+            <button onclick="drawPreset(3)" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs text-slate-700 font-medium border border-slate-200 transition">
+              预设 '3'
+            </button>
+            <button onclick="drawPreset(7)" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs text-slate-700 font-medium border border-slate-200 transition">
+              预设 '7'
+            </button>
+            <button onclick="drawPreset(8)" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs text-slate-700 font-medium border border-slate-200 transition">
+              预设 '8'
+            </button>
+          </div>
+          <!-- 模型上传区 -->
+          <div id="model-dropzone" class="mt-4 w-full border-2 border-dashed border-slate-300 rounded-xl px-3 py-3 text-center text-[11px] text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition cursor-pointer select-none">
+            <i class="fa-solid fa-file-import mr-1"></i> 拖拽 <span class="font-mono font-semibold">model.pth</span> 到此处更换模型（或点击选择文件）
+            <div class="text-[10px] text-slate-400 mt-1 leading-relaxed">
+              支持 convN / fcN(+bnN) 命名的 PyTorch state_dict（新版 zip 格式 .pth），浏览器内直接解析<br>
+              结构约定：卷积块 = Conv→[BatchNorm]→ReLU→2×2 池化，全连接层间 ReLU，输出 10 类
+            </div>
+          </div>
+          <div class="mt-2 w-full flex justify-end">
+            <button id="reset-model-btn" class="hidden text-[11px] text-slate-500 hover:text-indigo-600 underline">恢复默认模型（自训练 CNN）</button>
+          </div>
+          <input type="file" id="model-file-input" accept=".pth" class="hidden">
+        </div>
+
+        <!-- 右侧预测概率分布 (7列) -->
+        <div class="md:col-span-7 card-clean p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <span class="text-xs text-slate-400 font-medium">模型实时识别预测（自训练 CNN）</span>
+              <div id="pred-big-display" class="text-3xl font-extrabold text-indigo-600 mt-0.5">
+                等待书写...
+              </div>
+            </div>
+            <div id="conf-badge" class="text-right">
+              <span class="text-xs text-slate-400 font-medium">最高置信度</span>
+              <div id="pred-conf-display" class="text-2xl font-bold text-slate-800">--%</div>
+              <div id="infer-time" class="text-[11px] text-slate-400 font-mono mt-0.5"></div>
+            </div>
+          </div>
+
+          <!-- 0~9 预测概率条形图 -->
+          <div class="space-y-2" id="prob-bars-container">
+            <!-- 动态生成 10 个数字的概率条 -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-400 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div>MNIST 深度学习入门项目 · 附加交互演示（实验数据与结果分析见汇报 PPT）</div>
+      <div class="flex items-center gap-3">
+        <span>权重: model.pth (CNN, 100 epoch)</span>
+        <span>•</span>
+        <span>双击 index.html 即可打开</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 模型权重：由 export_weights.py 从 MNIST_Submission/model.pth 导出 -->
+  <script src="assets/model_weights.js"></script>
+  <!-- .pth 上传解析器：浏览器内直接解析 zip 格式的 state_dict -->
+  <script src="assets/pth_loader.js"></script>
+
+  <!-- ==================== JavaScript 核心交互逻辑 ==================== -->
+  <script>
+    // ---------------- 1. 选项卡切换 ----------------
+    function switchTab(tabKey) {
+      const tabs = ['builder', 'canvas'];
+      tabs.forEach(t => {
+        const pane = document.getElementById(`pane-${t}`);
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (t === tabKey) {
+          pane.classList.remove('hidden');
+          btn.className = 'tab-active px-4 py-2 rounded-lg flex items-center gap-2 transition whitespace-nowrap';
+        } else {
+          pane.classList.add('hidden');
+          btn.className = 'px-4 py-2 rounded-lg text-slate-600 hover:text-slate-900 flex items-center gap-2 transition whitespace-nowrap';
+        }
+      });
+    }
+
+    // ---------------- 2. 结构推导与校验核心 ----------------
+    // 网络的输入被固定为 1×28×28 的灰度图（与 MNIST 一致）。
+    // 每一层的输入不再由用户填写，而是从上一层输出自动推导，从根本上保证形状合法。
+    // 积木类型：conv(卷积) / pool(池化) / bn(归一化) / linear(全连接)
+    function deriveStructure(ls) {
+      const shapes = [];
+      const fatals = [];
+      const warnings = [];
+      let C = 1, H = 28, W = 28;   // 特征图阶段当前张量 (C, H, W)
+      let flatDim = null;          // 全连接阶段当前特征维数（null 表示尚未展平）
+      let totalParams = 0;
+
+      if (ls.length === 0) {
+        fatals.push('网络为空：请加载经典预设，或点击「+ 全连接层 / + 卷积层」搭建网络');
+      }
+
+      ls.forEach((l, i) => {
+        if (l.type === 'conv') {
+          if (flatDim !== null) {
+            fatals.push(`第 ${i + 1} 层是卷积层，但它位于全连接层之后（特征图已展平为向量，无法再卷积）`);
+            shapes.push({ bad: true });
+            return;
+          }
+          const params = l.out_ch * (C * l.k * l.k + 1);
+          totalParams += params;
+          shapes.push({ inCh: C, outCh: l.out_ch, k: l.k, H, W, params });
+          C = l.out_ch;
+        } else if (l.type === 'pool') {
+          if (flatDim !== null) {
+            fatals.push(`第 ${i + 1} 层是池化层，但它位于全连接层之后（特征图已展平为向量，无法再池化）`);
+            shapes.push({ bad: true });
+            return;
+          }
+          if (H < 2 || W < 2) {
+            fatals.push(`第 ${i + 1} 层池化：特征图 ${C}×${H}×${W} 已小于 2×2，无法再做 2×2 池化（请删除该层或去掉其前面的池化）`);
+            shapes.push({ bad: true });
+            return;
+          }
+          const H2 = Math.floor(H / 2), W2 = Math.floor(W / 2);
+          shapes.push({ inCh: C, H, W, H2, W2, kind: l.kind, params: 0 });
+          H = H2; W = W2;
+        } else if (l.type === 'bn') {
+          // 位置自适应：特征图阶段为 BatchNorm2d(C)，全连接阶段为 BatchNorm1d(dim)
+          if (flatDim === null) {
+            const params = 2 * C;
+            totalParams += params;
+            shapes.push({ mode: '2d', ch: C, H, W, params });
+          } else {
+            const params = 2 * flatDim;
+            totalParams += params;
+            shapes.push({ mode: '1d', dim: flatDim, params });
+          }
+        } else {  // linear
+          const prev = shapes[shapes.length - 1];
+          if (prev && prev.bad) { shapes.push({ bad: true }); flatDim = 0; return; }
+          // 输入统一取 flatDim（前面的层可能是 Linear 或 BatchNorm1d，特征维数都记录在 flatDim 中）
+          const inDim = flatDim !== null ? flatDim : C * H * W;   // 首个全连接层输入 = 展平后的特征维数
+          const params = inDim * l.out_dim + l.out_dim;
+          totalParams += params;
+          shapes.push({ inDim, outDim: l.out_dim, flatten: flatDim === null, flattenFrom: { C, H, W }, params });
+          flatDim = l.out_dim;
+          C = 0; H = 0; W = 0;
+        }
+      });
+
+      // 输出层约束：最后一层必须是 Linear 且输出 10 维（0~9 共 10 类）
+      if (ls.length > 0) {
+        const last = ls[ls.length - 1];
+        if (last.type !== 'linear') {
+          warnings.push('输出层必须是全连接层（Linear），当前最后一层不是全连接层');
+        } else if (last.out_dim !== 10) {
+          warnings.push(`输出层维度必须为 10（数字 0~9 共 10 类），当前为 ${last.out_dim}`);
+        }
+      }
+      if (totalParams > 3000000) {
+        warnings.push('总参数量超过 300 万，MNIST 任务上通常没有必要，且容易过拟合');
+      }
+      return { shapes, fatals, warnings, totalParams };
+    }
+
+    function fmtNum(n) {
+      return n.toLocaleString('en-US');
+    }
+
+    // ---------------- 3. 乐高积木拼装器状态与拖拽 ----------------
+    let layers = [];
+    let draggedIndex = null;
+    let toastTimer = null;
+
+    function loadTemplate(type) {
+      if (type === 'cnn') {
+        layers = [
+          { type: 'conv', out_ch: 32, k: 3, act: 'ReLU' },
+          { type: 'pool', kind: 'max' },
+          { type: 'conv', out_ch: 64, k: 3, act: 'ReLU' },
+          { type: 'pool', kind: 'max' },
+          { type: 'linear', out_dim: 128, act: 'ReLU', dropout: 0.25 },
+          { type: 'linear', out_dim: 10, act: 'None', dropout: 0 }
+        ];
+        document.getElementById('cfg-optimizer').value = 'Adam';
+        document.getElementById('cfg-lr').value = '0.001';
+      } else if (type === 'mlp') {
+        layers = [
+          { type: 'linear', out_dim: 256, act: 'ReLU', dropout: 0.2 },
+          { type: 'linear', out_dim: 128, act: 'ReLU', dropout: 0.2 },
+          { type: 'linear', out_dim: 10, act: 'None', dropout: 0 }
+        ];
+        document.getElementById('cfg-optimizer').value = 'Adam';
+        document.getElementById('cfg-lr').value = '0.001';
+      } else {
+        layers = [
+          { type: 'linear', out_dim: 10, act: 'None', dropout: 0 }
+        ];
+      }
+      renderLayersList();
+      renderCode();
+    }
+
+    function addLayer(kind) {
+      // 卷积/池化/归一化属于特征图阶段的操作：默认插入到第一个全连接层之前，保证结构合法
+      const featureStage = { conv: { type: 'conv', out_ch: 32, k: 3, act: 'ReLU' },
+                             pool: { type: 'pool', kind: 'max' },
+                             bn:   { type: 'bn' } };
+      let insertedBeforeLinear = false;
+
+      if (kind === 'linear') {
+        layers.push({ type: 'linear', out_dim: 10, act: 'ReLU', dropout: 0 });
+      } else {
+        const original = layers.slice();   // 快照必须取自插入之前，回滚才有意义
+        const candidate = featureStage[kind];
+        const firstLinearIdx = layers.findIndex(l => l.type === 'linear');
+        if (firstLinearIdx === -1) {
+          layers.push(candidate);
+        } else {
+          layers.splice(firstLinearIdx, 0, candidate);
+          insertedBeforeLinear = true;
+        }
+        // 插入后整体校验（如特征图已过小无法池化），不合法则回滚并说明
+        const d = deriveStructure(layers);
+        if (d.fatals.length) {
+          layers = original;
+          renderLayersList();
+          renderCode();
+          showToast('无法添加：' + d.fatals[0]);
+          return;
+        }
+      }
+      renderLayersList();
+      renderCode();
+      if (insertedBeforeLinear) {
+        const nameMap = { conv: '卷积层', pool: '池化层', bn: 'BatchNorm 归一化层' };
+        showToast(`新${nameMap[kind]}已插入到全连接层之前（特征图阶段的操作必须位于展平之前）`);
+      }
+    }
+
+    function removeLayer(idx) {
+      layers.splice(idx, 1);
+      renderLayersList();
+      renderCode();
+    }
+
+    function moveLayer(idx, dir) {
+      const target = idx + dir;
+      if (target < 0 || target >= layers.length) return;
+      const original = layers.slice();
+      const temp = layers[idx];
+      layers[idx] = layers[target];
+      layers[target] = temp;
+      tryApplyLayers(original, target);
+    }
+
+    // 交换/移动后统一做合法性检查，任意不合法则回滚并提示
+    function tryApplyLayers(original, highlightIndex) {
+      const d = deriveStructure(layers);
+      if (d.fatals.length) {
+        layers = original;
+        renderLayersList(highlightIndex);
+        renderCode();
+        // 提示必须在渲染之后显示，否则会被 renderLayersList 内的状态刷新覆盖
+        showToast('调整被拒绝：' + d.fatals[0]);
+        return;
+      }
+      renderLayersList(highlightIndex);
+      renderCode();
+    }
+
+    // 拖拽核心事件
+    function handleDragStart(e, index) {
+      draggedIndex = index;
+      e.dataTransfer.effectAllowed = 'move';
+      e.target.classList.add('dragging');
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+
+    function handleDragEnter(e) {
+      const card = e.target.closest('.layer-card');
+      if (card) card.classList.add('drag-over');
+    }
+
+    function handleDragLeave(e) {
+      const card = e.target.closest('.layer-card');
+      if (card) card.classList.remove('drag-over');
+    }
+
+    function handleDrop(e, targetIndex) {
+      e.preventDefault();
+      const card = e.target.closest('.layer-card');
+      if (card) card.classList.remove('drag-over');
+
+      if (draggedIndex === null || draggedIndex === targetIndex) return;
+      const original = layers.slice();
+      const item = layers.splice(draggedIndex, 1)[0];
+      layers.splice(targetIndex, 0, item);
+      tryApplyLayers(original, targetIndex);
+      draggedIndex = null;
+    }
+
+    function handleDragEnd(e) {
+      draggedIndex = null;
+      document.querySelectorAll('.layer-card').forEach(c => {
+        c.classList.remove('dragging', 'drag-over');
+      });
+    }
+
+    function renderLayersList(highlightIndex = null) {
+      const container = document.getElementById('layers-container');
+      container.innerHTML = '';
+      const derived = deriveStructure(layers);
+      renderStatus(derived);
+      renderShapeFlow(derived);
+
+      layers.forEach((l, idx) => {
+        const sh = derived.shapes[idx];
+        const card = document.createElement('div');
+        const isSwapped = (highlightIndex === idx);
+        card.className = `layer-card p-3 rounded-xl bg-white border border-slate-200 text-xs flex flex-col gap-2 relative shadow-sm hover:border-indigo-300 ${isSwapped ? 'just-swapped' : ''}`;
+        card.setAttribute('draggable', 'true');
+
+        card.addEventListener('dragstart', (e) => handleDragStart(e, idx));
+        card.addEventListener('dragover', handleDragOver);
+        card.addEventListener('dragenter', handleDragEnter);
+        card.addEventListener('dragleave', handleDragLeave);
+        card.addEventListener('drop', (e) => handleDrop(e, idx));
+        card.addEventListener('dragend', handleDragEnd);
+
+        if (sh.bad) {
+          card.innerHTML = `
+            <div class="flex items-center justify-between text-rose-600 font-bold">
+              <span>第 ${idx + 1} 层（结构非法）</span>
+              <button onclick="removeLayer(${idx})" class="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-600 transition">删除该层</button>
+            </div>`;
+          container.appendChild(card);
+          return;
+        }
+
+        let contentHtml = '';
+        if (l.type === 'conv') {
+          const isFirst = idx === 0;
+          contentHtml = `
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-grip-vertical text-slate-300 hover:text-slate-600 cursor-grab"></i>
+                <span class="font-bold text-blue-600 flex items-center gap-1.5">
+                  <i class="fa-solid fa-shapes"></i> Conv2d 卷积层 #${idx + 1}
+                </span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button onclick="moveLayer(${idx}, -1)" title="上移" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition">↑</button>
+                <button onclick="moveLayer(${idx}, 1)" title="下移" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition">↓</button>
+                <button onclick="removeLayer(${idx})" title="删除" class="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-600 ml-1 transition">✕</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2 mt-0.5">
+              <div>
+                <span class="text-slate-400 text-[10px] font-medium">输入通道 (自动)</span>
+                <input type="number" value="${sh.inCh}" disabled title="${isFirst ? '输入固定为 1×28×28 的灰度手写图' : '由上一层输出通道自动推导，不可手改'}" class="w-full bg-slate-100 border border-slate-200 rounded px-2 py-1 text-slate-500 text-xs font-mono cursor-not-allowed">
+              </div>
+              <div>
+                <span class="text-slate-400 text-[10px] font-medium">输出通道:</span>
+                <input type="number" min="1" max="1024" value="${l.out_ch}" onchange="layers[${idx}].out_ch=Math.max(1,Math.min(1024,parseInt(this.value)||1)); refresh();" class="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-800 text-xs font-mono">
+              </div>
+              <div>
+                <span class="text-slate-400 text-[10px] font-medium">卷积核 (padding 同步):</span>
+                <select onchange="layers[${idx}].k=parseInt(this.value); refresh();" class="w-full bg-slate-50 border border-slate-200 rounded px-1.5 py-1 text-slate-800 text-xs font-medium">
+                  <option value="3" ${l.k === 3 ? 'selected' : ''}>3×3 (pad 1)</option>
+                  <option value="5" ${l.k === 5 ? 'selected' : ''}>5×5 (pad 2)</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <span class="text-slate-400 text-[10px] font-medium">激活函数:</span>
+                <select onchange="layers[${idx}].act=this.value; refresh();" class="w-full bg-slate-50 border border-slate-200 rounded px-1.5 py-1 text-slate-800 text-xs font-medium">
+                  <option value="ReLU" ${l.act === 'ReLU' ? 'selected' : ''}>ReLU</option>
+                  <option value="GELU" ${l.act === 'GELU' ? 'selected' : ''}>GELU</option>
+                  <option value="Sigmoid" ${l.act === 'Sigmoid' ? 'selected' : ''}>Sigmoid</option>
+                  <option value="None" ${l.act === 'None' ? 'selected' : ''}>None</option>
+                </select>
+              </div>
+              <div class="flex items-end">
+                <div class="text-[10px] text-slate-400 font-mono">输出 ${sh.outCh}×${sh.H}×${sh.W} · ${fmtNum(sh.params)} 参数</div>
+              </div>
+            </div>
+          `;
+        } else if (l.type === 'pool') {
+          contentHtml = `
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-grip-vertical text-slate-300 hover:text-slate-600 cursor-grab"></i>
+                <span class="font-bold text-teal-600 flex items-center gap-1.5">
+                  <i class="fa-solid fa-compress"></i> 池化层 #${idx + 1}
+                </span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button onclick="moveLayer(${idx}, -1)" title="上移" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition">↑</button>
+                <button onclick="moveLayer(${idx}, 1)" title="下移" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition">↓</button>
+                <button onclick="removeLayer(${idx})" title="删除" class="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-600 ml-1 transition">✕</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mt-0.5">
+              <div>
+                <span class="text-slate-400 text-[10px] font-medium">池化类型:</span>
+                <select onchange="layers[${idx}].kind=this.value; refresh();" class="w-full bg-slate-50 border border-slate-200 rounded px-1.5 py-1 text-slate-800 text-xs font-medium">
+                  <option value="max" ${l.kind === 'max' ? 'selected' : ''}>MaxPool2d (2×2)</option>
+                  <option value="avg" ${l.kind === 'avg' ? 'selected' : ''}>AvgPool2d (2×2)</option>
+                </select>
+              </div>
+              <div class="flex items-end">
+                <div class="text-[10px] text-slate-400 font-mono">输入 ${sh.inCh}×${sh.H}×${sh.W} → 输出 ${sh.inCh}×${sh.H2}×${sh.W2} · 无参数</div>
+              </div>
+            </div>
+          `;
+        } else if (l.type === 'bn') {
+          const bnDesc = sh.mode === '2d' ? `BatchNorm2d(${sh.ch})` : `BatchNorm1d(${sh.dim})`;
+          contentHtml = `
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-grip-vertical text-slate-300 hover:text-slate-600 cursor-grab"></i>
+                <span class="font-bold text-violet-600 flex items-center gap-1.5">
+                  <i class="fa-solid fa-circle-half-stroke"></i> BatchNorm 归一化层 #${idx + 1}
+                </span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button onclick="moveLayer(${idx}, -1)" title="上移" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition">↑</button>
+                <button onclick="moveLayer(${idx}, 1)" title="下移" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition">↓</button>
+                <button onclick="removeLayer(${idx})" title="删除" class="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-600 ml-1 transition">✕</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mt-0.5">
+              <div>
+                <span class="text-slate-400 text-[10px] font-medium">归一化模式 (自动):</span>
+                <input type="text" disabled value="${bnDesc}" title="特征图阶段自动为 BatchNorm2d，全连接阶段自动为 BatchNorm1d，由所在位置决定" class="w-full bg-slate-100 border border-slate-200 rounded px-2 py-1 text-slate-500 text-xs font-mono cursor-not-allowed">
+              </div>
+              <div class="flex items-end">
+                <div class="text-[10px] text-slate-400 font-mono">形状直通 · ${fmtNum(sh.params)} 参数 (γ/β)</div>
+              </div>
+            </div>
+          `;
+        } else {
+          const isFirst = idx === 0;
+          contentHtml = `
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-grip-vertical text-slate-300 hover:text-slate-600 cursor-grab"></i>
+                <span class="font-bold text-indigo-600 flex items-center gap-1.5">
+                  <i class="fa-solid fa-layer-group"></i> Linear 全连接层 #${idx + 1}
+                  ${sh.flatten ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 font-medium">此处展平</span>' : ''}
+                </span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button onclick="moveLayer(${idx}, -1)" title="上移" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition">↑</button>
+                <button onclick="moveLayer(${idx}, 1)" title="下移" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition">↓</button>
+                <button onclick="removeLayer(${idx})" title="删除" class="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-600 ml-1 transition">✕</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2 mt-0.5">
+              <div>
+                <span class="text-slate-400 text-[10px] font-medium">输入维度 (自动)</span>
+                <input type="number" value="${sh.inDim}" disabled title="${isFirst ? '输入固定为展平后的 28×28 = 784 维图像向量' : '由上一层输出（或展平后的特征维数）自动推导，不可手改'}" class="w-full bg-slate-100 border border-slate-200 rounded px-2 py-1 text-slate-500 text-xs font-mono cursor-not-allowed">
+              </div>
+              <div>
+                <span class="text-slate-400 text-[10px] font-medium">输出维度:</span>
+                <input type="number" min="1" max="4096" value="${l.out_dim}" onchange="layers[${idx}].out_dim=Math.max(1,Math.min(4096,parseInt(this.value)||1)); refresh();" class="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-800 text-xs font-mono">
+              </div>
+              <div>
+                <span class="text-slate-400 text-[10px] font-medium">激活函数:</span>
+                <select onchange="layers[${idx}].act=this.value; refresh();" class="w-full bg-slate-50 border border-slate-200 rounded px-1.5 py-1 text-slate-800 text-xs font-medium">
+                  <option value="ReLU" ${l.act === 'ReLU' ? 'selected' : ''}>ReLU</option>
+                  <option value="GELU" ${l.act === 'GELU' ? 'selected' : ''}>GELU</option>
+                  <option value="Sigmoid" ${l.act === 'Sigmoid' ? 'selected' : ''}>Sigmoid</option>
+                  <option value="None" ${l.act === 'None' ? 'selected' : ''}>None</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <span class="text-slate-400 text-[10px] font-medium">Dropout:</span>
+                <select onchange="layers[${idx}].dropout=parseFloat(this.value); refresh();" class="w-full bg-slate-50 border border-slate-200 rounded px-1.5 py-1 text-slate-800 text-xs font-medium">
+                  <option value="0" ${!l.dropout ? 'selected' : ''}>无</option>
+                  <option value="0.2" ${l.dropout === 0.2 ? 'selected' : ''}>0.2</option>
+                  <option value="0.5" ${l.dropout === 0.5 ? 'selected' : ''}>0.5</option>
+                </select>
+              </div>
+              <div class="flex items-end">
+                <div class="text-[10px] text-slate-400 font-mono">输出 ${l.out_dim} · ${fmtNum(sh.params)} 参数</div>
+              </div>
+            </div>
+          `;
+        }
+        card.innerHTML = contentHtml;
+        container.appendChild(card);
+      });
+    }
+
+    function refresh() {
+      renderLayersList();
+      renderCode();
+    }
+
+    // ---------------- 4. 校验状态条与结构摘要 ----------------
+    function renderStatus(derived) {
+      const el = document.getElementById('builder-status');
+      if (derived.fatals.length) {
+        el.className = 'mb-3 text-xs px-3 py-2 rounded-lg border flex items-start gap-2 bg-rose-50 border-rose-200 text-rose-700';
+        el.innerHTML = `<i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span>${derived.fatals.join('；')}</span>`;
+      } else if (derived.warnings.length) {
+        el.className = 'mb-3 text-xs px-3 py-2 rounded-lg border flex items-start gap-2 bg-amber-50 border-amber-200 text-amber-800';
+        el.innerHTML = `<i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span>${derived.warnings.join('；')}
+          <button onclick="autoFixStructure()" class="ml-1 px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 font-semibold underline">自动修正</button></span>`;
+      } else {
+        el.className = 'mb-3 text-xs px-3 py-2 rounded-lg border flex items-start gap-2 bg-emerald-50 border-emerald-200 text-emerald-700';
+        el.innerHTML = `<i class="fa-solid fa-circle-check mt-0.5"></i><span>结构合法 · 总参数量 <strong>${fmtNum(derived.totalParams)}</strong> · 输出 10 类 logits</span>`;
+      }
+    }
+
+    function renderShapeFlow(derived) {
+      const el = document.getElementById('shape-flow');
+      if (derived.fatals.length || layers.length === 0) {
+        el.textContent = '—（当前结构不合法，无法推导张量流）—';
+        return;
+      }
+      const parts = ['输入 1×28×28'];
+      derived.shapes.forEach((sh) => {
+        if (sh.bad) return;
+        if (sh.outCh !== undefined) {            // conv
+          parts.push(`Conv ${sh.outCh}×${sh.H}×${sh.W}`);
+        } else if (sh.kind) {                    // pool
+          parts.push(`${sh.kind === 'max' ? 'MaxPool' : 'AvgPool'} ${sh.inCh}×${sh.H2}×${sh.W2}`);
+        } else if (sh.mode === '2d') {           // bn (特征图阶段)
+          parts.push(`BN2d(${sh.ch})`);
+        } else if (sh.mode === '1d') {           // bn (全连接阶段)
+          parts.push(`BN1d(${sh.dim})`);
+        } else {                                 // linear
+          if (sh.flatten) {
+            const f = sh.flattenFrom;
+            if (f.C !== 1 || f.H !== 28 || f.W !== 28) parts.push(`展平 ${sh.inDim}`);
+          }
+          parts.push(`Linear ${sh.outDim}`);
+        }
+      });
+      el.textContent = parts.join('  →  ') + `   ·   总参数量 ${fmtNum(derived.totalParams)}`;
+    }
+
+    function autoFixStructure() {
+      if (!layers.length) { loadTemplate('mlp'); return; }
+      const last = layers[layers.length - 1];
+      if (last.type !== 'linear') {
+        layers.push({ type: 'linear', out_dim: 10, act: 'None', dropout: 0 });
+      } else {
+        last.out_dim = 10;
+      }
+      renderLayersList();
+      renderCode();
+      showToast('已自动修正：输出层为 Linear(→10)');
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('builder-status');
+      el.className = 'mb-3 text-xs px-3 py-2 rounded-lg border flex items-start gap-2 bg-indigo-50 border-indigo-200 text-indigo-700';
+      el.innerHTML = `<i class="fa-solid fa-circle-info mt-0.5"></i><span>${msg}</span>`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        renderStatus(deriveStructure(layers));
+      }, 3000);
+    }
+
+    // ---------------- 5. 实时生成 PyTorch 代码 ----------------
+    function renderCode() {
+      const codeEl = document.getElementById('code-output');
+      const derived = deriveStructure(layers);
+
+      if (derived.fatals.length) {
+        codeEl.textContent = '# 无法生成代码：当前网络结构不合法\n#\n# ' + derived.fatals.join('\n# ');
+        return;
+      }
+
+      const opt = document.getElementById('cfg-optimizer').value;
+      const lr = document.getElementById('cfg-lr').value;
+      const batch = document.getElementById('cfg-batch').value;
+      const aug = document.getElementById('cfg-augment').value;
+
+      let importCode = `import torch\nimport torch.nn as nn\n`;
+      let augCode = '';
+      if (aug === 'affine') {
+        importCode += `import torchvision.transforms as transforms\n`;
+        augCode = `# 数据增强：仅应用于训练集（对应对比实验中的增强维度）\ntrain_transform = transforms.Compose([\n    transforms.RandomAffine(degrees=10, translate=(0.1, 0.1)),  # 随机旋转 ±10° + 平移 ±10%\n    transforms.ToTensor(),\n])\n\n`;
+      }
+
+      let initCode = `${importCode}\n# 网络总参数量: ${fmtNum(derived.totalParams)}\nclass CustomNetwork(nn.Module):\n    def __init__(self):\n        super().__init__()\n`;
+      let forwardCode = `    def forward(self, x):\n        # 输入形状 x: (batch, 1, 28, 28)\n`;
+
+      let convN = 0, fcN = 0, poolN = 0, bnN = 0, actN = 0, dropN = 0;  // act/drop 全局编号，避免不同层模块重名互相覆盖
+      layers.forEach((l, i) => {
+        const sh = derived.shapes[i];
+        if (l.type === 'conv') {
+          convN++;
+          initCode += `        self.conv${convN} = nn.Conv2d(${sh.inCh}, ${sh.outCh}, kernel_size=${sh.k}, padding=${Math.floor(sh.k / 2)})  # (b,${sh.inCh},${sh.H},${sh.W}) -> (b,${sh.outCh},${sh.H},${sh.W})\n`;
+          if (l.act !== 'None') {
+            actN++;
+            initCode += `        self.act${actN} = nn.${l.act}()\n`;
+          }
+          forwardCode += `        x = self.conv${convN}(x)\n`;
+          if (l.act !== 'None') forwardCode += `        x = self.act${actN}(x)\n`;
+        } else if (l.type === 'pool') {
+          poolN++;
+          const cls = l.kind === 'max' ? 'MaxPool2d' : 'AvgPool2d';
+          initCode += `        self.pool${poolN} = nn.${cls}(2, 2)  # (b,${sh.inCh},${sh.H},${sh.W}) -> (b,${sh.inCh},${sh.H2},${sh.W2})\n`;
+          forwardCode += `        x = self.pool${poolN}(x)  # 空间下采样\n`;
+        } else if (l.type === 'bn') {
+          bnN++;
+          if (sh.mode === '2d') {
+            initCode += `        self.bn${bnN} = nn.BatchNorm2d(${sh.ch})  # (b,${sh.ch},${sh.H},${sh.W}) -> (b,${sh.ch},${sh.H},${sh.W})\n`;
+          } else {
+            initCode += `        self.bn${bnN} = nn.BatchNorm1d(${sh.dim})  # (b,${sh.dim}) -> (b,${sh.dim})\n`;
+          }
+          forwardCode += `        x = self.bn${bnN}(x)  # 归一化\n`;
+        } else {
+          if (sh.flatten) {
+            const f = sh.flattenFrom;
+            initCode += `        self.flatten = nn.Flatten()\n`;
+            forwardCode += `        x = self.flatten(x)  # (batch, ${f.C}, ${f.H}, ${f.W}) -> (batch, ${sh.inDim})\n`;
+          }
+          fcN++;
+          initCode += `        self.fc${fcN} = nn.Linear(${sh.inDim}, ${sh.outDim})  # (${sh.inDim} -> ${sh.outDim})\n`;
+          if (l.act !== 'None') {
+            actN++;
+            initCode += `        self.act${actN} = nn.${l.act}()\n`;
+          }
+          if (l.dropout > 0) {
+            dropN++;
+            initCode += `        self.drop${dropN} = nn.Dropout(${l.dropout})\n`;
+          }
+
+          forwardCode += `        x = self.fc${fcN}(x)  # (${sh.inDim} -> ${sh.outDim})\n`;
+          if (l.act !== 'None') forwardCode += `        x = self.act${actN}(x)\n`;
+          if (l.dropout > 0) forwardCode += `        x = self.drop${dropN}(x)\n`;
+        }
+      });
+
+      forwardCode += `        return x  # 输出 10 类 logits (batch, 10)\n\n`;
+
+      let trainingSetupCode = `${augCode}# 优化与数据配置\nmodel = CustomNetwork().to('cuda' if torch.cuda.is_available() else 'cpu')\ncriterion = nn.CrossEntropyLoss()\n`;
+      if (opt === 'Adam') {
+        trainingSetupCode += `optimizer = torch.optim.Adam(model.parameters(), lr=${lr})\n`;
+      } else if (opt === 'SGD') {
+        trainingSetupCode += `optimizer = torch.optim.SGD(model.parameters(), lr=${lr}, momentum=0.9)\n`;
+      } else {
+        trainingSetupCode += `optimizer = torch.optim.RMSprop(model.parameters(), lr=${lr})\n`;
+      }
+      trainingSetupCode += `train_loader = torch.utils.data.DataLoader(dataset, batch_size=${batch}, shuffle=True)\n`;
+
+      codeEl.textContent = `${initCode}\n${forwardCode}${trainingSetupCode}`;
+    }
+
+    function copyGeneratedCode() {
+      const code = document.getElementById('code-output').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.innerHTML = '<i class="fa-solid fa-check text-emerald-400"></i> 已复制！';
+        setTimeout(() => {
+          btn.innerHTML = '<i class="fa-regular fa-copy"></i> 复制代码';
+        }, 2000);
+      });
+    }
+
+    // ---------------- 6. 手写画板 + 自训练 CNN 浏览器端推理 ----------------
+    // 权重来自 assets/model_weights.js（由 export_weights.py 从 model.pth 导出），
+    // 此处逐层复现与 PyTorch 完全一致的前向计算：Conv2d(padding) -> ReLU -> MaxPool2d -> Flatten -> Linear。
+    let canvas, ctx, isDrawing = false;
+    let weightsReady = false;
+    let currentModel = null;   // 当前用于推理的模型（默认自训练 CNN，可被上传的 .pth 替换）
+
+    function buildDefaultModel() {
+      const W = window.MODEL_WEIGHTS;
+      return {
+        convs: [
+          { w: W.conv1_w, b: W.conv1_b, k: 3, pad: 1 },
+          { w: W.conv2_w, b: W.conv2_b, k: 5, pad: 2 }
+        ],
+        fcs: [
+          { w: W.fc1_w, b: W.fc1_b },
+          { w: W.fc2_w, b: W.fc2_b },
+          { w: W.fc3_w, b: W.fc3_b }
+        ],
+        desc: '自训练 CNN（model.pth 导出，100 epoch）'
+      };
+    }
+
+    function initCanvas() {
+      canvas = document.getElementById('digit-canvas');
+      ctx = canvas.getContext('2d');
+      ctx.lineWidth = 18;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#ffffff';
+
+      // mousedown 时先开新路径，避免上一笔结尾与新一笔开头被连线
+      canvas.addEventListener('mousedown', (e) => {
+        isDrawing = true;
+        const p = canvasPos(e);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+      });
+      canvas.addEventListener('mousemove', (e) => { if (isDrawing) draw(e); });
+      window.addEventListener('mouseup', () => { if (isDrawing) { isDrawing = false; predictDigit(); } });
+
+      canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        isDrawing = true;
+        const p = canvasPos(e.touches[0]);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+      });
+      canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (isDrawing) draw(e.touches[0]);
+      });
+      canvas.addEventListener('touchend', () => {
+        if (isDrawing) { isDrawing = false; predictDigit(); }
+      });
+
+      const barsContainer = document.getElementById('prob-bars-container');
+      barsContainer.innerHTML = '';
+      for (let i = 0; i < 10; i++) {
+        barsContainer.innerHTML += `
+          <div class="flex items-center text-xs">
+            <span class="w-6 font-bold text-slate-700 font-mono">${i}</span>
+            <div class="flex-1 bg-slate-100 border border-slate-200 rounded-full h-2.5 mx-2 overflow-hidden">
+              <div id="bar-${i}" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-150" style="width: 0%"></div>
+            </div>
+            <span id="pct-${i}" class="w-12 text-right font-mono text-slate-500 font-medium">0.0%</span>
+          </div>
+        `;
+      }
+
+      const statusEl = document.getElementById('model-status');
+      if (window.MODEL_WEIGHTS && window.MODEL_WEIGHTS.conv1_w) {
+        weightsReady = true;
+        currentModel = buildDefaultModel();
+        setStatus(statusEl, '✓ 已加载默认模型：自训练 CNN（assets/model_weights.js，导出自 model.pth，100 epoch）', 'emerald');
+      } else {
+        setStatus(statusEl, '✗ 未找到默认权重 assets/model_weights.js，识别功能不可用（请先运行 export_weights.py 导出）', 'rose');
+      }
+      initModelDropzone(statusEl);
+    }
+
+    function setStatus(statusEl, msg, color) {
+      const map = { emerald: 'text-emerald-600', rose: 'text-rose-500', slate: 'text-slate-400' };
+      statusEl.textContent = msg;
+      statusEl.className = 'text-[11px] mt-1 ' + (map[color] || map.slate);
+    }
+
+    // ---------------- 拖拽上传 .pth 更换模型 ----------------
+    function initModelDropzone(statusEl) {
+      const zone = document.getElementById('model-dropzone');
+      const input = document.getElementById('model-file-input');
+      const resetBtn = document.getElementById('reset-model-btn');
+
+      zone.addEventListener('click', () => input.click());
+      input.addEventListener('change', () => {
+        if (input.files && input.files[0]) loadModelFile(input.files[0], statusEl, resetBtn);
+        input.value = '';
+      });
+      ['dragover', 'dragenter'].forEach(ev => zone.addEventListener(ev, (e) => {
+        e.preventDefault();
+        zone.classList.add('border-indigo-500', 'bg-indigo-50/60');
+      }));
+      ['dragleave', 'dragend'].forEach(ev => zone.addEventListener(ev, () => {
+        zone.classList.remove('border-indigo-500', 'bg-indigo-50/60');
+      }));
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('border-indigo-500', 'bg-indigo-50/60');
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) loadModelFile(f, statusEl, resetBtn);
+      });
+      // 防止拖到页面其他位置时浏览器直接打开文件
+      window.addEventListener('dragover', (e) => e.preventDefault());
+      window.addEventListener('drop', (e) => e.preventDefault());
+
+      resetBtn.addEventListener('click', () => {
+        currentModel = buildDefaultModel();
+        resetBtn.classList.add('hidden');
+        setStatus(statusEl, '✓ 已恢复默认模型：' + currentModel.desc, 'emerald');
+        clearCanvas();
+      });
+    }
+
+    async function loadModelFile(file, statusEl, resetBtn) {
+      if (file.size > 200 * 1024 * 1024) {
+        setStatus(statusEl, '✗ ' + file.name + ' 超过 200MB，请确认是 state_dict 权重文件', 'rose');
+        return;
+      }
+      setStatus(statusEl, '正在解析 ' + file.name + ' ...', 'slate');
+      try {
+        const buf = await file.arrayBuffer();
+        const state = await window.PTHLoader.parsePth(buf);
+        const model = window.PTHLoader.buildModelFromStateDict(state);
+        currentModel = model;
+        resetBtn.classList.remove('hidden');
+        setStatus(statusEl, '✓ 已加载 ' + file.name + '：' + model.desc, 'emerald');
+        clearCanvas();  // 模型已更换，清空旧画板结果避免误读
+      } catch (err) {
+        setStatus(statusEl, '✗ 加载 ' + file.name + ' 失败：' + (err && err.message ? err.message : err) + '（继续使用当前模型）', 'rose');
+      }
+    }
+
+    function canvasPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+
+    function draw(e) {
+      const p = canvasPos(e);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+    }
+
+    function clearCanvas() {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.beginPath();
+      document.getElementById('pred-big-display').textContent = '等待书写...';
+      document.getElementById('pred-conf-display').textContent = '--%';
+      document.getElementById('infer-time').textContent = '';
+      for (let i = 0; i < 10; i++) {
+        document.getElementById(`bar-${i}`).style.width = '0%';
+        document.getElementById(`pct-${i}`).textContent = '0.0%';
+      }
+    }
+
+    function drawPreset(num) {
+      clearCanvas();
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 22;
+      ctx.beginPath();
+
+      if (num === 3) {
+        ctx.arc(140, 100, 45, -Math.PI / 2, Math.PI / 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(140, 180, 50, -Math.PI / 2, Math.PI / 2);
+        ctx.stroke();
+      } else if (num === 7) {
+        ctx.moveTo(80, 70);
+        ctx.lineTo(200, 70);
+        ctx.lineTo(110, 220);
+        ctx.stroke();
+      } else if (num === 8) {
+        ctx.arc(140, 105, 40, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(140, 180, 48, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      predictDigit();
+    }
+
+    // 预处理：280×280 画板 -> 28×28 灰度 [0,1]，并按质心平移到画面中心（对齐 MNIST 分布）
+    function preprocessDrawing() {
+      const t = document.createElement('canvas');
+      t.width = 28; t.height = 28;
+      const tc = t.getContext('2d');
+      tc.drawImage(canvas, 0, 0, 28, 28);
+      const d = tc.getImageData(0, 0, 28, 28).data;
+
+      let img = new Float32Array(784);
+      let sum = 0, sx = 0, sy = 0;
+      for (let y = 0; y < 28; y++) {
+        for (let x = 0; x < 28; x++) {
+          const v = d[(y * 28 + x) * 4] / 255.0;
+          img[y * 28 + x] = v;
+          sum += v; sx += v * x; sy += v * y;
+        }
+      }
+      if (sum < 0.5) return null;  // 空白画板
+
+      const cx = sx / sum, cy = sy / sum;
+      const dx = Math.round(13.5 - cx), dy = Math.round(13.5 - cy);
+      if (dx !== 0 || dy !== 0) {
+        const shifted = new Float32Array(784);
+        for (let y = 0; y < 28; y++) {
+          for (let x = 0; x < 28; x++) {
+            const ox = x - dx, oy = y - dy;
+            if (ox >= 0 && ox < 28 && oy >= 0 && oy < 28) {
+              shifted[y * 28 + x] = img[oy * 28 + ox];
+            }
+          }
+        }
+        img = shifted;
+      }
+      return img;
+    }
+
+    // 单个卷积层（padding 保持空间尺寸），x 为 CHW 布局的 Float32Array
+    function convLayer(x, C, H, W, wArr, bArr, K, pad) {
+      const oc = bArr.length;
+      const out = new Float32Array(oc * H * W);
+      for (let o = 0; o < oc; o++) {
+        const wo = wArr[o];
+        const bo = bArr[o];
+        for (let y = 0; y < H; y++) {
+          for (let xi = 0; xi < W; xi++) {
+            let s = bo;
+            for (let ic = 0; ic < C; ic++) {
+              const base = ic * H * W;
+              const wic = wo[ic];
+              for (let ky = 0; ky < K; ky++) {
+                const iy = y - pad + ky;
+                if (iy < 0 || iy >= H) continue;
+                for (let kx = 0; kx < K; kx++) {
+                  const ix = xi - pad + kx;
+                  if (ix < 0 || ix >= W) continue;
+                  s += wic[ky][kx] * x[base + iy * W + ix];
+                }
+              }
+            }
+            out[o * H * W + y * W + xi] = s;
+          }
+        }
+      }
+      return out;
+    }
+
+    function reluInplace(x) {
+      for (let i = 0; i < x.length; i++) if (x[i] < 0) x[i] = 0;
+      return x;
+    }
+
+    function maxPool2x2(x, C, H) {  // H == W；PyTorch floor 语义：奇数尺寸丢弃末行/末列
+      const Ho = Math.floor(H / 2);
+      const out = new Float32Array(C * Ho * Ho);
+      for (let c = 0; c < C; c++) {
+        const base = c * H * H;
+        for (let y = 0; y < Ho; y++) {
+          for (let xi = 0; xi < Ho; xi++) {
+            const a = x[base + (2 * y) * H + 2 * xi];
+            const b = x[base + (2 * y) * H + 2 * xi + 1];
+            const c2 = x[base + (2 * y + 1) * H + 2 * xi];
+            const d = x[base + (2 * y + 1) * H + 2 * xi + 1];
+            out[c * Ho * Ho + y * Ho + xi] = Math.max(a, b, c2, d);
+          }
+        }
+      }
+      return out;
+    }
+
+    function fcLayer(x, wArr, bArr) {
+      const nOut = bArr.length;
+      const out = new Float32Array(nOut);
+      for (let i = 0; i < nOut; i++) {
+        const row = wArr[i];
+        let s = bArr[i];
+        for (let j = 0; j < x.length; j++) s += row[j] * x[j];
+        out[i] = s;
+      }
+      return out;
+    }
+
+    // BatchNorm2d 推理：y = γ·(x-μ)/√(σ²+ε) + β，按通道作用于 CHW 特征图（使用训练期的 running 统计）
+    function batchNorm2d(x, C, H, W, bn) {
+      for (let c = 0; c < C; c++) {
+        const scale = bn.gamma[c] / Math.sqrt(bn.var[c] + 1e-5);
+        const shift = bn.beta[c] - bn.mean[c] * scale;
+        const base = c * H * W;
+        for (let i = 0; i < H * W; i++) x[base + i] = x[base + i] * scale + shift;
+      }
+      return x;
+    }
+
+    // 通用前向传播：卷积块 = Conv(padding)→[BatchNorm]→ReLU→2×2 池化；全连接层间 ReLU（最后一层除外）。
+    // 默认模型与上传解析出的模型共用这一套前向，输入为 28×28 展平的 CHW 灰度向量。
+    function forwardModel(model, img) {
+      const t0 = performance.now();
+      let x = img, C = 1, H = 28, W = 28;
+      for (const c of model.convs) {
+        x = convLayer(x, C, H, W, c.w, c.b, c.k, c.pad);
+        C = c.w.length;
+        if (c.bn) x = batchNorm2d(x, C, H, W, c.bn);
+        reluInplace(x);
+        x = maxPool2x2(x, C, H);
+        H = Math.floor(H / 2); W = Math.floor(W / 2);
+      }
+      for (let i = 0; i < model.fcs.length; i++) {
+        const f = model.fcs[i];
+        x = fcLayer(x, f.w, f.b);
+        if (i < model.fcs.length - 1) reluInplace(x);
+      }
+      return { logits: x, dt: performance.now() - t0 };
+    }
+
+    function predictDigit() {
+      if (!weightsReady) return;
+      const img = preprocessDrawing();
+      if (!img) return;  // 空白画板不推理
+
+      const { logits, dt } = forwardModel(currentModel, img);
+
+      // 数值稳定的 softmax
+      let maxL = -Infinity;
+      for (let i = 0; i < 10; i++) if (logits[i] > maxL) maxL = logits[i];
+      const probs = new Float32Array(10);
+      let expSum = 0;
+      for (let i = 0; i < 10; i++) { probs[i] = Math.exp(logits[i] - maxL); expSum += probs[i]; }
+      for (let i = 0; i < 10; i++) probs[i] /= expSum;
+
+      let bestDigit = 0, bestProb = 0;
+      for (let i = 0; i < 10; i++) {
+        const p = probs[i] * 100;
+        document.getElementById(`bar-${i}`).style.width = `${p}%`;
+        document.getElementById(`pct-${i}`).textContent = `${p.toFixed(1)}%`;
+        if (p > bestProb) { bestProb = p; bestDigit = i; }
+      }
+
+      document.getElementById('pred-big-display').textContent = `数字 ${bestDigit}`;
+      document.getElementById('pred-conf-display').textContent = `${bestProb.toFixed(1)}%`;
+      document.getElementById('infer-time').textContent = `推理耗时 ${dt.toFixed(1)} ms`;
+    }
+
+    // ---------------- 页面初始化 ----------------
+    window.addEventListener('DOMContentLoaded', () => {
+      loadTemplate('cnn');
+      initCanvas();
+      clearCanvas();
+    });
+  </script>
+</body>
+</html>
