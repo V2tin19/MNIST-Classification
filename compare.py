@@ -69,6 +69,24 @@ def main():
     #CNN,SGD:0.1 vs 0.001
     cnn_lr_01 = train_experiment(model_type='CNN', opt_type='SGD', lr=0.1, epochs=epochs)
     cnn_lr_001 = train_experiment(model_type='CNN', opt_type='SGD', lr=0.001, epochs=epochs)
+
+    # 结果表格
+    results = [
+        ('MLP', 'Adam', 0.001, mlp_acc),
+        ('CNN', 'Adam', 0.001, cnn_adam_acc),
+        ('CNN', 'SGD', 0.01, cnn_sgd_acc),
+        ('CNN', 'SGD', 0.1, cnn_lr_01),
+        ('CNN', 'SGD', 0.001, cnn_lr_001),
+    ]
+    table_lines = ["===== 任务5 对比实验结果 (10 Epochs, 验证集 10000 张) ====="]
+    for i, (name, opt, lr, acc) in enumerate(results, 1):
+        table_lines.append(f"组{i}: {name} + {opt}(lr={lr}) | 最终验证准确率: {acc[-1]:.2f}% | 最佳: {max(acc):.2f}%")
+    table_path = os.path.join(FIG_DIR, "task5_results_table.txt")
+    with open(table_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(table_lines) + "\n")
+    print("\n".join(table_lines))
+    print(f"结果表格已保存至: {table_path}")
+
     #MLP vs CNN
     plt.figure(figsize=(12, 6))
     plt.subplot(1, 3, 1)

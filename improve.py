@@ -2,7 +2,7 @@ import os
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, Subset
 import torchvision.transforms as transforms
 
 from dataset import my_dataset
@@ -55,11 +55,13 @@ def main():
         transforms.ToTensor()
     ])
 
-    full_dataset = my_dataset(split='train')
-    full_dataset.transform = train_transform
-    
+    base_dataset = my_dataset(split='train')
+    aug_dataset = my_dataset(split='train')
+    aug_dataset.transform = train_transform
+
     torch.manual_seed(42)
-    train_data, val_data = random_split(full_dataset, [50000, 10000])
+    train_data, val_data = random_split(base_dataset, [50000, 10000])
+    train_data = Subset(aug_dataset, train_data.indices)
     
     train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
     val_loader = DataLoader(val_data, batch_size=64, shuffle=False)
